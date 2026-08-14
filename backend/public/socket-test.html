@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Socket.IO Connection Test</title>
+    <script src="/socket.io.min.js"></script>
+</head>
+<body>
+    <h1>Socket.IO Connection Test</h1>
+    <div id="status">Connecting...</div>
+    <div id="logs" style="background: #f0f0f0; padding: 10px; margin-top: 20px; font-family: monospace;"></div>
+
+    <script>
+        const statusDiv = document.getElementById('status');
+        const logsDiv = document.getElementById('logs');
+        
+        function log(message) {
+            console.log(message);
+            logsDiv.innerHTML += new Date().toLocaleTimeString() + ': ' + message + '<br>';
+        }
+
+        log('Starting Socket.IO client...');
+
+        const socket = io('http://10.5.120.254:5000', {
+            autoConnect: true,
+            reconnection: true,
+            timeout: 20000,
+            forceNew: true
+        });
+
+        socket.on('connect', () => {
+            log('✅ Connected with ID: ' + socket.id);
+            statusDiv.innerHTML = '✅ Connected';
+            statusDiv.style.color = 'green';
+            
+            // Test authentication
+            socket.emit('authenticate', {
+                token: 'admin-demo-token',
+                userType: 'admin'
+            });
+        });
+
+        socket.on('connect_error', (error) => {
+            log('❌ Connection error: ' + error.message);
+            statusDiv.innerHTML = '❌ Connection failed';
+            statusDiv.style.color = 'red';
+        });
+
+        socket.on('disconnect', (reason) => {
+            log('📡 Disconnected: ' + reason);
+            statusDiv.innerHTML = '📡 Disconnected';
+            statusDiv.style.color = 'orange';
+        });
+
+        socket.on('authenticated', (data) => {
+            log('🔐 Authenticated: ' + JSON.stringify(data));
+        });
+
+        socket.on('auth_error', (error) => {
+            log('🚫 Auth error: ' + error.message);
+        });
+
+        // Log all events
+        socket.onAny((event, ...args) => {
+            log('📨 Event: ' + event + ' - ' + JSON.stringify(args));
+        });
+
+        log('Socket.IO client initialized');
+    </script>
+</body>
+</html>
