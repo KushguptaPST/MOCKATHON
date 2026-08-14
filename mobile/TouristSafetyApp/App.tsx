@@ -23,6 +23,10 @@ import EmergencyAlertScreen from './src/screens/EmergencyAlertScreen';
 // Import hooks
 import useAuth from './src/hooks/useAuth';
 import { RootStackParamList, TabStackParamList } from './src/types';
+import { initI18n } from './src/i18n';
+
+// Initialize i18n once at startup
+initI18n();
 
 // Create navigators
 const Stack = createStackNavigator<RootStackParamList>();

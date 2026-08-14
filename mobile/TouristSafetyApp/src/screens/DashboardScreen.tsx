@@ -10,17 +10,20 @@ import {
   Dimensions,
   Switch,
 } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { tokenManager } from '../services/api';
 import { locationService } from '../services/locationService';
 import geofenceService, { GeofenceCheckResult } from '../services/geofenceService';
 import socketService from '../services/socketService';
 import { logoutUser } from '../hooks/useAuth';
 import { FullMapModal } from '../components/FullMapModal';
+import { SettingsModal } from '../components/SettingsModal';
 import { User, LocationData, NavigationProps } from '../types';
 
 const { width } = Dimensions.get('window');
 
 const DashboardScreen: React.FC<NavigationProps> = ({ navigation }) => {
+  const { t } = useTranslation();
   const [user, setUser] = useState<User | null>(null);
   const [location, setLocation] = useState<LocationData | null>(null);
   const [geofenceStatus, setGeofenceStatus] = useState<GeofenceCheckResult | null>(null);
@@ -28,6 +31,7 @@ const DashboardScreen: React.FC<NavigationProps> = ({ navigation }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showMapModal, setShowMapModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
 
   useEffect(() => {
     loadUserData();
@@ -61,7 +65,7 @@ const DashboardScreen: React.FC<NavigationProps> = ({ navigation }) => {
       getCurrentLocation();
     } else {
       Alert.alert(
-        'Location Permission Required',
+        t('common.error', 'Permission Required'),
         'This app needs location access for safety monitoring features.'
       );
     }
@@ -78,23 +82,20 @@ const DashboardScreen: React.FC<NavigationProps> = ({ navigation }) => {
 
   const toggleLocationTracking = (newValue?: boolean) => {
     const targetState = newValue !== undefined ? newValue : !isTrackingLocation;
-    console.log('Location tracking toggled to:', targetState);
     
-    if (!targetState) {
-      console.log('Stopping location tracking...');
+    if (isTrackingLocation && !targetState) {
       locationService.stopLocationTracking();
       setIsTrackingLocation(false);
-      Alert.alert('Live Tracking', 'Location tracking turned OFF');
-    } else {
-      console.log('Starting location tracking...');
+      Alert.alert(
+        t('dashboard.liveTracking', 'Live Tracking'),
+        'Real-time location tracking stopped.',
+        [{ text: 'OK' }]
+      );
+    } else if (!isTrackingLocation && targetState) {
       locationService.startLocationTracking(
         (newLocation) => {
-          console.log('New location received:', newLocation);
           processLocationUpdate(newLocation);
-          
-          // Send location update to server via Socket.IO for real-time monitoring
           socketService.sendLocationUpdate(newLocation);
-          console.log('Location sent to server:', newLocation);
         },
         (error) => {
           console.error('Location tracking error:', error);
@@ -103,47 +104,15 @@ const DashboardScreen: React.FC<NavigationProps> = ({ navigation }) => {
       );
       setIsTrackingLocation(true);
       Alert.alert(
-        'Live Real-time Tracking ON', 
-        'Tracking enabled. Your live GPS coordinates are being monitored for safety.',
+        t('dashboard.trackingOn', 'Live Real-time Tracking ON'), 
+        t('dashboard.trackingDesc', 'Tracking enabled. Your live GPS coordinates are being monitored for safety.'),
         [{ text: 'OK' }]
       );
     }
   };
 
   const handleEmergency = () => {
-    console.log('Emergency/Panic button pressed!');
-    Alert.alert(
-      'Emergency Alert',
-      'Are you sure you want to send an emergency alert?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Send Alert',
-          style: 'destructive',
-          onPress: () => {
-            console.log('Navigating to Emergency screen...');
-            navigation.navigate('Emergency');
-          },
-        },
-      ]
-    );
-  };
-
-  const handleLogout = () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to log out of RakshaSetu?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Logout',
-          style: 'destructive',
-          onPress: async () => {
-            await logoutUser();
-          },
-        },
-      ]
-    );
+    navigation.navigate('Emergency');
   };
 
   const onRefresh = async () => {
@@ -156,7 +125,7 @@ const DashboardScreen: React.FC<NavigationProps> = ({ navigation }) => {
   if (loading) {
     return (
       <View style={styles.centerContainer}>
-        <Text style={styles.loadingText}>Loading...</Text>
+        <Text style={styles.loadingText}>{t('common.loading', 'Loading...')}</Text>
       </View>
     );
   }
@@ -172,15 +141,20 @@ const DashboardScreen: React.FC<NavigationProps> = ({ navigation }) => {
       <View style={styles.header}>
         <View style={styles.headerRow}>
           <View style={styles.headerTextGroup}>
-            <Text style={styles.greeting}>Hello, {user?.name || 'Tourist'}!</Text>
-            <Text style={styles.subGreeting}>Stay safe on your journey</Text>
+            <Text style={styles.greeting}>
+              {t('dashboard.greeting', { name: user?.name || 'Tourist' })}
+            </Text>
+            <Text style={styles.subGreeting}>
+              {t('dashboard.subGreeting', 'Stay safe on your journey')}
+            </Text>
           </View>
           <View style={styles.headerActions}>
             <TouchableOpacity
-              style={styles.logoutButton}
-              onPress={handleLogout}
+              style={styles.settingsButton}
+              onPress={() => setShowSettingsModal(true)}
+              activeOpacity={0.8}
             >
-              <Text style={styles.logoutButtonText}>🚪 Logout</Text>
+              <Text style={styles.settingsButtonText}>⚙️</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -188,22 +162,22 @@ const DashboardScreen: React.FC<NavigationProps> = ({ navigation }) => {
 
       {/* Digital ID Card */}
       <View style={styles.digitalIdCard}>
-        <Text style={styles.cardTitle}>Digital Tourist ID</Text>
+        <Text style={styles.cardTitle}>{t('dashboard.digitalIdCard', 'Digital Tourist ID')}</Text>
         <View style={styles.idContainer}>
-          <Text style={styles.idLabel}>ID:</Text>
+          <Text style={styles.idLabel}>{t('dashboard.idLabel', 'ID:')}</Text>
           <Text style={styles.idValue}>{user?.digitalId || 'Loading...'}</Text>
         </View>
         <TouchableOpacity
           style={styles.viewIdButton}
           onPress={() => navigation.navigate('DigitalID')}
         >
-          <Text style={styles.viewIdButtonText}>View Full Details</Text>
+          <Text style={styles.viewIdButtonText}>{t('dashboard.viewDetails', 'View Full Details')}</Text>
         </TouchableOpacity>
       </View>
 
       {/* Quick Actions */}
       <View style={styles.quickActions}>
-        <Text style={styles.sectionTitle}>Quick Actions</Text>
+        <Text style={styles.sectionTitle}>{t('dashboard.quickActions', 'Quick Actions')}</Text>
         
         <View style={styles.actionRow}>
           <TouchableOpacity
@@ -211,12 +185,12 @@ const DashboardScreen: React.FC<NavigationProps> = ({ navigation }) => {
             onPress={handleEmergency}
           >
             <Text style={styles.emergencyButtonText}>🚨</Text>
-            <Text style={styles.actionButtonText}>Emergency</Text>
+            <Text style={styles.actionButtonText}>{t('dashboard.emergency', 'Emergency')}</Text>
           </TouchableOpacity>
 
           <View style={[styles.actionButton, styles.locationButton, isTrackingLocation && styles.locationButtonActive]}>
             <Text style={styles.locationButtonText}>📍</Text>
-            <Text style={styles.actionButtonText}>Live Tracking</Text>
+            <Text style={styles.actionButtonText}>{t('dashboard.liveTracking', 'Live Tracking')}</Text>
             <View style={styles.switchWrapper}>
               <Switch
                 value={isTrackingLocation}
@@ -231,15 +205,15 @@ const DashboardScreen: React.FC<NavigationProps> = ({ navigation }) => {
 
       {/* Current Location */}
       <View style={styles.locationCard}>
-        <Text style={styles.sectionTitle}>Current Location</Text>
+        <Text style={styles.sectionTitle}>{t('dashboard.currentLocation', 'Current Location')}</Text>
 
         {location && (
           <View style={styles.locationInfo}>
-            <Text style={styles.locationLabel}>Coordinates:</Text>
+            <Text style={styles.locationLabel}>{t('dashboard.coordinates', 'Coordinates:')}</Text>
             <Text style={styles.locationValue}>
               {locationService.formatLocation(location)}
             </Text>
-            <Text style={styles.locationLabel}>Last Updated:</Text>
+            <Text style={styles.locationLabel}>{t('dashboard.lastUpdated', 'Last Updated:')}</Text>
             <Text style={styles.locationValue}>
               {location.timestamp.toLocaleTimeString()}
             </Text>
@@ -251,28 +225,28 @@ const DashboardScreen: React.FC<NavigationProps> = ({ navigation }) => {
             style={styles.refreshLocationButton}
             onPress={getCurrentLocation}
           >
-            <Text style={styles.refreshLocationButtonText}>📍 Refresh</Text>
+            <Text style={styles.refreshLocationButtonText}>{t('dashboard.updateLocation', '📍 Refresh')}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.openMapButton}
             onPress={() => setShowMapModal(true)}
           >
-            <Text style={styles.openMapButtonText}>🗺️ Map</Text>
+            <Text style={styles.openMapButtonText}>{t('dashboard.viewOnMap', '🗺️ Map')}</Text>
           </TouchableOpacity>
         </View>
       </View>
 
       {/* Safety Status & Geofencing */}
       <View style={styles.statusCard}>
-        <Text style={styles.sectionTitle}>Safety Status & Geofencing</Text>
+        <Text style={styles.sectionTitle}>{t('dashboard.safetyStatus', 'Safety Status & Geofencing')}</Text>
         <View style={styles.statusIndicators}>
           <View style={styles.statusItem}>
             <Text style={styles.statusIcon}>
               {location ? '🟢' : '🔴'}
             </Text>
             <Text style={styles.statusText}>
-              Location: {location ? 'Active' : 'Inactive'}
+              {t('dashboard.locationStatus', 'Location')}: {location ? t('dashboard.active', 'Active') : t('dashboard.inactive', 'Inactive')}
             </Text>
           </View>
           <View style={styles.statusItem}>
@@ -280,7 +254,7 @@ const DashboardScreen: React.FC<NavigationProps> = ({ navigation }) => {
               {isTrackingLocation ? '🟢' : '🟡'}
             </Text>
             <Text style={styles.statusText}>
-              Tracking: {isTrackingLocation ? 'ON' : 'OFF'}
+              {t('dashboard.trackingStatus', 'Tracking')}: {isTrackingLocation ? t('dashboard.on', 'ON') : t('dashboard.off', 'OFF')}
             </Text>
           </View>
           <View style={styles.statusItem}>
@@ -288,18 +262,18 @@ const DashboardScreen: React.FC<NavigationProps> = ({ navigation }) => {
               {geofenceStatus?.inDangerZone ? '🚨' : geofenceStatus?.inSafeZone ? '🛡️' : '🗺️'}
             </Text>
             <Text style={styles.statusText}>
-              Geofence Zone: {geofenceStatus?.inDangerZone
-                ? 'DANGER ZONE WARNING!'
+              {t('dashboard.geofenceZone', 'Geofence Zone')}: {geofenceStatus?.inDangerZone
+                ? t('dashboard.dangerZoneWarning', 'DANGER ZONE WARNING!')
                 : geofenceStatus?.inSafeZone
-                ? 'Safe Tourist Perimeter'
-                : 'Standard Area'}
+                ? t('dashboard.safeZone', 'Safe Tourist Perimeter')
+                : t('dashboard.standardArea', 'Standard Area')}
             </Text>
           </View>
           {geofenceStatus?.nearestDangerZoneName && (
             <View style={styles.statusItem}>
               <Text style={styles.statusIcon}>⚠️</Text>
               <Text style={styles.statusText}>
-                Nearest Danger Zone: {geofenceStatus.nearestDangerZoneName} ({geofenceStatus.distanceToNearestDangerMeters}m away)
+                {t('dashboard.nearestDanger', 'Nearest Danger Zone')}: {geofenceStatus.nearestDangerZoneName} ({geofenceStatus.distanceToNearestDangerMeters}m {t('dashboard.away', 'away')})
               </Text>
             </View>
           )}
@@ -310,6 +284,13 @@ const DashboardScreen: React.FC<NavigationProps> = ({ navigation }) => {
         visible={showMapModal}
         onClose={() => setShowMapModal(false)}
         location={location}
+      />
+
+      <SettingsModal
+        visible={showSettingsModal}
+        onClose={() => setShowSettingsModal(false)}
+        user={user}
+        onLogout={logoutUser}
       />
     </ScrollView>
   );
@@ -347,16 +328,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 6,
   },
-  logoutButton: {
-    backgroundColor: '#e74c3c',
-    borderRadius: 6,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
+  settingsButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    borderRadius: 20,
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
   },
-  logoutButtonText: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: 'bold',
+  settingsButtonText: {
+    fontSize: 20,
   },
   greeting: {
     fontSize: 22,

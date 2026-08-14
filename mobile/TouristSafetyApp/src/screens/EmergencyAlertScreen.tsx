@@ -9,6 +9,7 @@ import {
   ScrollView,
   Animated,
 } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { emergencyAPI, tokenManager } from '../services/api';
 import { locationService } from '../services/locationService';
 import socketService from '../services/socketService';
@@ -16,12 +17,14 @@ import emergencyContactService, { EmergencyNotificationData } from '../services/
 import { EmergencyAlert, LocationData, NavigationProps, User } from '../types';
 
 const EmergencyAlertScreen: React.FC<NavigationProps> = ({ navigation }) => {
+  const { t } = useTranslation();
   const [selectedType, setSelectedType] = useState<EmergencyAlert['type']>('panic');
   const [message, setMessage] = useState('');
   const [location, setLocation] = useState<LocationData | null>(null);
   const [sending, setSending] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [pulseAnim] = useState(new Animated.Value(1));
+  const [sentAlerts, setSentAlerts] = useState<Array<{ id: string; type: string; message: string; time: string; status: string }>>([]);
 
   useEffect(() => {
     getCurrentLocation();
@@ -32,18 +35,21 @@ const EmergencyAlertScreen: React.FC<NavigationProps> = ({ navigation }) => {
     const handleResolutionPrompt = (data: any) => {
       console.log('🚨 Received resolution confirmation request:', data);
       Alert.alert(
-        '🚨 Police / Control Room Check',
-        data.message || 'Authorities are checking: Is your problem resolved? Are you safe now?',
+        t('emergency.controlRoomCheckTitle', '🚨 Police / Control Room Check'),
+        data.message || t('emergency.controlRoomCheckDesc', 'Authorities are checking: Is your problem resolved? Are you safe now?'),
         [
           {
-            text: '❌ Still Need Help',
+            text: t('emergency.stillNeedHelp', '❌ Still Need Help'),
             style: 'destructive',
             onPress: () => {
-              Alert.alert('Help is Active', 'Your emergency alert remains active. Officers and emergency contacts are on standby.');
+              Alert.alert(
+                t('emergency.title', 'Emergency Alert Active'),
+                t('emergency.systemDesc', 'Your emergency alert remains active. Officers and emergency contacts are on standby.')
+              );
             }
           },
           {
-            text: '✅ Yes, I am Safe (Confirm Resolved)',
+            text: t('emergency.confirmSafe', '✅ Yes, I am Safe (Confirm Resolved)'),
             onPress: async () => {
               await handleConfirmResolution(data.alertId);
             }
@@ -65,14 +71,16 @@ const EmergencyAlertScreen: React.FC<NavigationProps> = ({ navigation }) => {
       await emergencyAPI.confirmResolution(alertId);
       setSentAlerts(prev => prev.map(a => a.id === alertId ? { ...a, status: 'CONFIRMED_SAFE' } : a));
       Alert.alert(
-        '✅ Safety Confirmed',
-        'Thank you! Your confirmation that you are safe has been received by the control room and authorities.'
+        t('emergency.safetyConfirmedTitle', '✅ Safety Confirmed'),
+        t('emergency.safetyConfirmedDesc', 'Thank you! Your confirmation that you are safe has been received by the control room and authorities.')
       );
     } catch (e) {
       console.error('Error confirming resolution:', e);
-      // Optimistically update status
       setSentAlerts(prev => prev.map(a => a.id === alertId ? { ...a, status: 'CONFIRMED_SAFE' } : a));
-      Alert.alert('✅ Safety Confirmed', 'Your confirmation has been noted.');
+      Alert.alert(
+        t('emergency.safetyConfirmedTitle', '✅ Safety Confirmed'),
+        t('emergency.safeConfirmedMsg', 'Your confirmation has been noted.')
+      );
     }
   };
 
@@ -89,48 +97,28 @@ const EmergencyAlertScreen: React.FC<NavigationProps> = ({ navigation }) => {
 
   const getCurrentLocation = async (): Promise<{ latitude: number; longitude: number } | null> => {
     try {
-      // First request permission
       const hasPermission = await locationService.requestLocationPermission();
       if (!hasPermission) {
-        Alert.alert('Permission Required', 'Location access is needed for emergency services. Please grant permission in settings.');
         return null;
       }
 
-      // Get current location
       const currentLocation = await locationService.getCurrentLocation();
-      console.log('Location obtained for emergency:', currentLocation);
-      
-      // Set the location state for the component
-      const locationData = {
-        latitude: currentLocation.latitude,
-        longitude: currentLocation.longitude,
-        accuracy: currentLocation.accuracy,
-        timestamp: new Date()
-      };
-      setLocation(locationData);
-      
-      return {
-        latitude: currentLocation.latitude,
-        longitude: currentLocation.longitude,
-      };
-    } catch (error: any) {
-      console.error('Error getting location for emergency:', error);
-      
-      // Provide user-friendly error messages
-      let errorMessage = 'Unable to get location';
-      if (error && typeof error === 'object') {
-        if (error.code === 1) {
-          errorMessage = 'Location permission denied. Please enable location services.';
-        } else if (error.code === 2) {
-          errorMessage = 'Location unavailable. Please check if GPS is enabled.';
-        } else if (error.code === 3) {
-          errorMessage = 'Location request timed out. Please try again.';
-        } else if (error.message) {
-          errorMessage = error.message;
-        }
+      if (currentLocation) {
+        const locationData = {
+          latitude: currentLocation.latitude,
+          longitude: currentLocation.longitude,
+          accuracy: currentLocation.accuracy,
+          timestamp: new Date()
+        };
+        setLocation(locationData);
+        return {
+          latitude: currentLocation.latitude,
+          longitude: currentLocation.longitude,
+        };
       }
-      
-      Alert.alert('Location Error', errorMessage);
+      return null;
+    } catch (error: any) {
+      console.warn('Silent location fallback for emergency screen:', error);
       return null;
     }
   };
@@ -153,18 +141,18 @@ const EmergencyAlertScreen: React.FC<NavigationProps> = ({ navigation }) => {
   };
 
   const emergencyTypes = [
-    { type: 'panic' as const, label: 'General Emergency', icon: '🚨', color: '#e74c3c', priority: 'HIGH' },
-    { type: 'medical' as const, label: 'Medical Emergency', icon: '🏥', color: '#e67e22', priority: 'CRITICAL' },
-    { type: 'accident' as const, label: 'Accident', icon: '🚗', color: '#d35400', priority: 'HIGH' },
-    { type: 'theft' as const, label: 'Theft/Robbery', icon: '🔓', color: '#f39c12', priority: 'MEDIUM' },
-    { type: 'harassment' as const, label: 'Harassment', icon: '⚠️', color: '#e74c3c', priority: 'HIGH' },
-    { type: 'lost' as const, label: 'Lost/Stranded', icon: '🧭', color: '#9b59b6', priority: 'MEDIUM' },
-    { type: 'natural_disaster' as const, label: 'Natural Disaster', icon: '🌪️', color: '#c0392b', priority: 'CRITICAL' },
-    { type: 'fire' as const, label: 'Fire Emergency', icon: '🔥', color: '#e74c3c', priority: 'CRITICAL' },
-    { type: 'violence' as const, label: 'Violence/Assault', icon: '🛡️', color: '#8e44ad', priority: 'CRITICAL' },
-    { type: 'suspicious_activity' as const, label: 'Suspicious Activity', icon: '👁️', color: '#f39c12', priority: 'LOW' },
-    { type: 'transport' as const, label: 'Transport Issue', icon: '🚌', color: '#3498db', priority: 'LOW' },
-    { type: 'other' as const, label: 'Other Emergency', icon: '📞', color: '#7f8c8d', priority: 'MEDIUM' },
+    { type: 'panic' as const, label: t('emergency.types.panic', 'General Emergency'), icon: '🚨', color: '#e74c3c', priority: 'HIGH' },
+    { type: 'medical' as const, label: t('emergency.types.medical', 'Medical Emergency'), icon: '🏥', color: '#e67e22', priority: 'CRITICAL' },
+    { type: 'accident' as const, label: t('emergency.types.accident', 'Accident'), icon: '🚗', color: '#d35400', priority: 'HIGH' },
+    { type: 'theft' as const, label: t('emergency.types.theft', 'Theft/Robbery'), icon: '🔓', color: '#f39c12', priority: 'MEDIUM' },
+    { type: 'harassment' as const, label: t('emergency.types.harassment', 'Harassment'), icon: '⚠️', color: '#e74c3c', priority: 'HIGH' },
+    { type: 'lost' as const, label: t('emergency.types.lost', 'Lost/Stranded'), icon: '🧭', color: '#9b59b6', priority: 'MEDIUM' },
+    { type: 'natural_disaster' as const, label: t('emergency.types.natural_disaster', 'Natural Disaster'), icon: '🌪️', color: '#c0392b', priority: 'CRITICAL' },
+    { type: 'fire' as const, label: t('emergency.types.fire', 'Fire Emergency'), icon: '🔥', color: '#e74c3c', priority: 'CRITICAL' },
+    { type: 'violence' as const, label: t('emergency.types.violence', 'Violence/Assault'), icon: '🛡️', color: '#8e44ad', priority: 'CRITICAL' },
+    { type: 'suspicious_activity' as const, label: t('emergency.types.suspicious_activity', 'Suspicious Activity'), icon: '👁️', color: '#f39c12', priority: 'LOW' },
+    { type: 'transport' as const, label: t('emergency.types.transport', 'Transport Issue'), icon: '🚌', color: '#3498db', priority: 'LOW' },
+    { type: 'other' as const, label: t('emergency.types.other', 'Other Emergency'), icon: '📞', color: '#7f8c8d', priority: 'MEDIUM' },
   ];
 
   const getPriorityColor = (priority: string) => {
@@ -177,7 +165,20 @@ const EmergencyAlertScreen: React.FC<NavigationProps> = ({ navigation }) => {
     }
   };
 
-  const [sentAlerts, setSentAlerts] = useState<Array<{ id: string; type: string; message: string; time: string; status: string }>>([]);
+  const ENGLISH_CATEGORY_NAMES: Record<string, string> = {
+    panic: 'PANIC SOS',
+    medical: 'MEDICAL EMERGENCY',
+    accident: 'ACCIDENT',
+    theft: 'THEFT / ROBBERY',
+    harassment: 'HARASSMENT',
+    lost: 'LOST / STRANDED',
+    natural_disaster: 'NATURAL DISASTER',
+    fire: 'FIRE EMERGENCY',
+    violence: 'VIOLENCE / ASSAULT',
+    suspicious_activity: 'SUSPICIOUS ACTIVITY',
+    transport: 'TRANSPORT ISSUE',
+    other: 'OTHER EMERGENCY',
+  };
 
   const executeEmergencyAlert = async (alertType: string, alertMessage: string) => {
     setSending(true);
@@ -208,21 +209,29 @@ const EmergencyAlertScreen: React.FC<NavigationProps> = ({ navigation }) => {
       }
 
       const currentTypeObj = emergencyTypes.find(t => t.type === alertType) || emergencyTypes[0];
-      const finalMsg = alertMessage.trim() || `${currentTypeObj.label} emergency assistance requested`;
+      const englishCategory = ENGLISH_CATEGORY_NAMES[alertType] || 'EMERGENCY';
+
+      // Always format the message in ENGLISH for Admin Dashboard
+      let englishAdminMessage = '';
+      if (alertMessage && alertMessage.trim()) {
+        englishAdminMessage = `${englishCategory}: ${alertMessage.trim()}`;
+      } else {
+        englishAdminMessage = `${englishCategory}: Immediate assistance requested by tourist`;
+      }
 
       const alertData: EmergencyAlert = {
         type: alertType,
-        message: finalMsg,
+        message: englishAdminMessage,
         location: activeLocation!,
         priority: currentTypeObj.priority as 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL',
       };
 
-      console.log('🚨 Dispatching Emergency Alert:', alertData);
+      console.log('🚨 Dispatching Emergency Alert (English formatted for Admin):', alertData);
 
-      // A. Send via Socket.IO for real-time live monitoring
-      socketService.sendEmergencyAlert(activeLocation, `${alertType.toUpperCase()}: ${finalMsg}`);
+      // A. Send via Socket.IO for real-time live monitoring (English)
+      socketService.sendEmergencyAlert(activeLocation, `${alertType.toUpperCase()}: ${englishAdminMessage}`);
 
-      // B. Send via REST API to MongoDB Database
+      // B. Send via REST API to MongoDB Database (English)
       let registeredAlertId = `ALERT_${Date.now()}`;
       try {
         const res = await emergencyAPI.sendAlert(alertData);
@@ -233,11 +242,12 @@ const EmergencyAlertScreen: React.FC<NavigationProps> = ({ navigation }) => {
         console.warn('REST API emergency alert backup warning:', apiErr);
       }
 
-      // Record in Sent Alerts list on screen
+      // Record in Sent Alerts list on mobile screen (with tourist's chosen UI language)
+      const touristDisplayMsg = alertMessage.trim() || `${currentTypeObj.label} (${englishCategory})`;
       const newSentItem = {
         id: registeredAlertId,
         type: currentTypeObj.label,
-        message: finalMsg,
+        message: touristDisplayMsg,
         time: new Date().toLocaleTimeString(),
         status: 'DISPATCHED'
       };
@@ -259,15 +269,15 @@ const EmergencyAlertScreen: React.FC<NavigationProps> = ({ navigation }) => {
         };
 
         Alert.alert(
-          '🚨 Emergency Alert Sent!',
-          `Your alert has been broadcast in real-time to authorities & police monitoring.\n\nWould you like to open SMS to notify your emergency contact (${user.emergencyContact})?`,
+          t('emergency.alertSentTitle', '🚨 Emergency Alert Sent!'),
+          `${t('emergency.alertSentDesc', 'Your alert has been broadcast in real-time to authorities & police monitoring.')}\n\n${t('emergency.smsPrompt', { phone: user.emergencyContact })}`,
           [
             {
-              text: 'Done',
+              text: t('common.done', 'Done'),
               style: 'cancel',
             },
             {
-              text: '📱 Open SMS Now',
+              text: t('emergency.openSms', '📱 Open SMS Now'),
               onPress: async () => {
                 await emergencyContactService.sendSMS(contactData, notificationData);
               },
@@ -276,8 +286,8 @@ const EmergencyAlertScreen: React.FC<NavigationProps> = ({ navigation }) => {
         );
       } else {
         Alert.alert(
-          '🚨 Emergency Alert Sent!',
-          'Your emergency alert and live GPS coordinates have been sent to police control and authorities. Help is on the way!'
+          t('emergency.alertSentTitle', '🚨 Emergency Alert Sent!'),
+          t('emergency.alertSentDesc', 'Your emergency alert and live GPS coordinates have been sent to police control and authorities. Help is on the way!')
         );
       }
 
@@ -286,7 +296,7 @@ const EmergencyAlertScreen: React.FC<NavigationProps> = ({ navigation }) => {
     } catch (error: any) {
       console.error('Error in executeEmergencyAlert:', error);
       const errMsg = error.response?.data?.message || 'Failed to send alert. Please check connection or call emergency services directly.';
-      Alert.alert('Alert Failed', errMsg);
+      Alert.alert(t('common.error', 'Alert Failed'), errMsg);
     } finally {
       setSending(false);
     }
@@ -295,12 +305,12 @@ const EmergencyAlertScreen: React.FC<NavigationProps> = ({ navigation }) => {
   const sendEmergencyAlert = async () => {
     const typeObj = emergencyTypes.find(t => t.type === selectedType);
     Alert.alert(
-      'Send Category Emergency Alert',
+      t('emergency.sendAlert', 'Send Emergency Alert'),
       `Are you sure you want to broadcast a ${typeObj?.label || 'Emergency'} alert?`,
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel', 'Cancel'), style: 'cancel' },
         {
-          text: 'Send Alert',
+          text: t('emergency.sendAlert', 'Send Alert'),
           style: 'destructive',
           onPress: () => executeEmergencyAlert(selectedType, message),
         },
@@ -310,12 +320,12 @@ const EmergencyAlertScreen: React.FC<NavigationProps> = ({ navigation }) => {
 
   const quickPanicAlert = () => {
     Alert.alert(
-      '🚨 PANIC SOS BUTTON',
-      'This will immediately broadcast an urgent PANIC alert to authorities and your emergency contact.',
+      t('emergency.panicConfirmTitle', '🚨 PANIC SOS BUTTON'),
+      t('emergency.panicConfirmDesc', 'This will immediately broadcast an urgent PANIC alert to authorities and your emergency contact.'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel', 'Cancel'), style: 'cancel' },
         {
-          text: 'SEND PANIC ALERT NOW',
+          text: t('emergency.sendPanicNow', 'SEND PANIC ALERT NOW'),
           style: 'destructive',
           onPress: () => executeEmergencyAlert('panic', 'PANIC BUTTON ACTIVATED - IMMEDIATE RESCUE NEEDED'),
         },
@@ -327,8 +337,8 @@ const EmergencyAlertScreen: React.FC<NavigationProps> = ({ navigation }) => {
     <ScrollView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Emergency Alert</Text>
-        <Text style={styles.headerSubtitle}>Get help quickly and safely</Text>
+        <Text style={styles.headerTitle}>{t('emergency.title', 'Emergency Alert')}</Text>
+        <Text style={styles.headerSubtitle}>{t('emergency.subtitle', 'Get help quickly and safely')}</Text>
       </View>
 
       {/* Rectangular Panic SOS Button with Border Radius */}
@@ -348,20 +358,20 @@ const EmergencyAlertScreen: React.FC<NavigationProps> = ({ navigation }) => {
             <View style={styles.panicContentRow}>
               <Text style={styles.panicButtonIcon}>🚨</Text>
               <View style={styles.panicTextGroup}>
-                <Text style={styles.panicButtonText}>PANIC SOS BUTTON</Text>
-                <Text style={styles.panicButtonSubtext}>Tap for Immediate Emergency Help & Rescue</Text>
+                <Text style={styles.panicButtonText}>{t('emergency.panicTitle', 'PANIC SOS BUTTON')}</Text>
+                <Text style={styles.panicButtonSubtext}>{t('emergency.panicSubtext', 'Tap for Immediate Emergency Help & Rescue')}</Text>
               </View>
             </View>
           </Animated.View>
         </TouchableOpacity>
         <Text style={styles.panicDescription}>
-          Press the rectangular PANIC button above to alert police & control room instantly
+          {t('emergency.panicDesc', 'Press the rectangular PANIC button above to alert police & control room instantly')}
         </Text>
       </View>
 
       {/* Emergency Type Selection */}
       <View style={styles.typeSection}>
-        <Text style={styles.sectionTitle}>Select Emergency Type</Text>
+        <Text style={styles.sectionTitle}>{t('emergency.selectType', 'Select Emergency Type')}</Text>
         <ScrollView 
           horizontal 
           showsHorizontalScrollIndicator={false}
@@ -395,16 +405,16 @@ const EmergencyAlertScreen: React.FC<NavigationProps> = ({ navigation }) => {
           ))}
         </ScrollView>
         <Text style={styles.typeHint}>
-          🔥 CRITICAL and 🚨 HIGH priority alerts get immediate response
+          {t('emergency.priorityHint', '🔥 CRITICAL and 🚨 HIGH priority alerts get immediate response')}
         </Text>
       </View>
 
       {/* Message Input */}
       <View style={styles.messageSection}>
-        <Text style={styles.sectionTitle}>Additional Details (Optional)</Text>
+        <Text style={styles.sectionTitle}>{t('emergency.additionalDetails', 'Additional Details (Optional)')}</Text>
         <TextInput
           style={styles.messageInput}
-          placeholder="Describe your emergency or location details..."
+          placeholder={t('emergency.detailsPlaceholder', 'Describe your emergency or location details...')}
           placeholderTextColor="#7f8c8d"
           multiline
           numberOfLines={4}
@@ -417,16 +427,16 @@ const EmergencyAlertScreen: React.FC<NavigationProps> = ({ navigation }) => {
       {/* Location Info */}
       {location && (
         <View style={styles.locationSection}>
-          <Text style={styles.sectionTitle}>Your Current Location</Text>
+          <Text style={styles.sectionTitle}>{t('emergency.currentLocation', 'Your Current Location')}</Text>
           <View style={styles.locationInfo}>
             <Text style={styles.locationText}>
               📍 {locationService.formatLocation(location)}
             </Text>
             <Text style={styles.locationSubtext}>
-              Accuracy: ±{location.accuracy?.toFixed(0) || 'Unknown'} meters
+              {t('emergency.accuracy', { acc: location.accuracy?.toFixed(0) || 'Unknown' })}
             </Text>
             <Text style={styles.locationSubtext}>
-              Updated: {location.timestamp.toLocaleTimeString()}
+              {location.timestamp.toLocaleTimeString()}
             </Text>
           </View>
         </View>
@@ -443,23 +453,29 @@ const EmergencyAlertScreen: React.FC<NavigationProps> = ({ navigation }) => {
           disabled={sending}
         >
           <Text style={styles.sendButtonText}>
-            {sending ? 'Sending Alert...' : 'Send Emergency Alert'}
+            {sending ? t('emergency.sending', 'Sending Alert...') : t('emergency.sendAlert', 'Send Emergency Alert')}
           </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.cancelButton}
-          onPress={() => navigation.goBack()}
+          onPress={() => {
+            if (navigation.canGoBack()) {
+              navigation.goBack();
+            } else {
+              navigation.navigate('Dashboard');
+            }
+          }}
           disabled={sending}
         >
-          <Text style={styles.cancelButtonText}>Cancel</Text>
+          <Text style={styles.cancelButtonText}>{t('common.cancel', 'Cancel')}</Text>
         </TouchableOpacity>
       </View>
 
       {/* Sent Alerts Section with Resolution Cross-Check Confirmation */}
       {sentAlerts.length > 0 && (
         <View style={styles.sentSection}>
-          <Text style={styles.sentTitle}>📋 Sent Emergency Alerts ({sentAlerts.length})</Text>
+          <Text style={styles.sentTitle}>{t('emergency.sentAlertsTitle', { count: sentAlerts.length })}</Text>
           {sentAlerts.map((item) => (
             <View key={item.id} style={styles.sentCard}>
               <View style={styles.sentCardHeader}>
@@ -472,24 +488,24 @@ const EmergencyAlertScreen: React.FC<NavigationProps> = ({ navigation }) => {
                     styles.sentStatusText,
                     item.status === 'CONFIRMED_SAFE' && styles.sentStatusTextSafe
                   ]}>
-                    {item.status === 'CONFIRMED_SAFE' ? '✅ SAFE & RESOLVED' : '🚨 ACTIVE'}
+                    {item.status === 'CONFIRMED_SAFE' ? t('emergency.statusSafe', '✅ SAFE & RESOLVED') : t('emergency.statusActive', '🚨 ACTIVE')}
                   </Text>
                 </View>
               </View>
               <Text style={styles.sentCardMessage}>{item.message}</Text>
-              <Text style={styles.sentCardTime}>Dispatched at {item.time}</Text>
+              <Text style={styles.sentCardTime}>{t('emergency.dispatchedAt', { time: item.time })}</Text>
 
               {item.status !== 'CONFIRMED_SAFE' ? (
                 <TouchableOpacity
                   style={styles.resolveConfirmButton}
                   onPress={() => {
                     Alert.alert(
-                      'Confirm Safety & Resolution',
-                      'Is your problem resolved and are you safe now?',
+                      t('emergency.safetyConfirmedTitle', 'Confirm Safety & Resolution'),
+                      t('emergency.controlRoomCheckDesc', 'Is your problem resolved and are you safe now?'),
                       [
-                        { text: 'No, Keep Alert Active', style: 'cancel' },
+                        { text: t('emergency.stillNeedHelp', 'No, Keep Alert Active'), style: 'cancel' },
                         {
-                          text: '✅ Yes, I am Safe (Resolve)',
+                          text: t('emergency.confirmSafe', '✅ Yes, I am Safe (Resolve)'),
                           onPress: () => handleConfirmResolution(item.id)
                         }
                       ]
@@ -497,13 +513,13 @@ const EmergencyAlertScreen: React.FC<NavigationProps> = ({ navigation }) => {
                   }}
                 >
                   <Text style={styles.resolveConfirmButtonText}>
-                    ✅ Is problem resolved? Tap to Confirm Safe
+                    {t('emergency.isResolvedPrompt', '✅ Is problem resolved? Tap to Confirm Safe')}
                   </Text>
                 </TouchableOpacity>
               ) : (
                 <View style={styles.safeConfirmedBox}>
                   <Text style={styles.safeConfirmedText}>
-                    ✅ Safety confirmed by you. Control room notified.
+                    {t('emergency.safeConfirmedMsg', '✅ Safety confirmed by you. Control room notified.')}
                   </Text>
                 </View>
               )}
@@ -514,12 +530,9 @@ const EmergencyAlertScreen: React.FC<NavigationProps> = ({ navigation }) => {
 
       {/* Safety Tips */}
       <View style={styles.tipsSection}>
-        <Text style={styles.tipsTitle}>Safety Tips</Text>
+        <Text style={styles.tipsTitle}>{t('emergency.safetyTips', 'Safety Tips')}</Text>
         <Text style={styles.tipsText}>
-          • Stay calm and move to a safe location if possible{'\n'}
-          • Keep your phone charged and with you{'\n'}
-          • Follow local emergency procedures{'\n'}
-          • Wait for help to arrive in a secure location
+          {t('emergency.tipsContent', '• Stay calm and move to a safe location if possible\n• Keep your phone charged and with you\n• Follow local emergency procedures\n• Wait for help to arrive in a secure location')}
         </Text>
       </View>
     </ScrollView>
