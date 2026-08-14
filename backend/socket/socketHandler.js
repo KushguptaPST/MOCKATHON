@@ -288,11 +288,54 @@ class SocketHandler {
       .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
   }
 
+  // Request confirmation from tourist (cross-check by admin)
+  requestResolutionConfirmation(alertId) {
+    const alert = this.emergencyAlerts.get(alertId);
+    if (alert) {
+      alert.resolutionStatus = 'PENDING_TOURIST_CONFIRMATION';
+      this.emergencyAlerts.set(alertId, alert);
+
+      // Broadcast to tourist app
+      this.io.emit('request_resolution_confirmation', {
+        alertId: alertId,
+        digitalId: alert.digitalId,
+        userId: alert.userId,
+        message: 'Police/Authorities are checking: Is your problem resolved? Are you safe now?'
+      });
+
+      // Broadcast update to all admins
+      this.broadcastToAdmins('alert_updated', alert);
+      return true;
+    }
+    return false;
+  }
+
+  // Tourist confirms resolution
+  touristConfirmResolution(alertId) {
+    const alert = this.emergencyAlerts.get(alertId);
+    if (alert) {
+      alert.resolutionStatus = 'TOURIST_CONFIRMED';
+      alert.touristConfirmedAt = new Date();
+      this.emergencyAlerts.set(alertId, alert);
+
+      // Broadcast to admins that tourist confirmed safe
+      this.broadcastToAdmins('tourist_confirmed_resolution', {
+        alertId: alertId,
+        alert: alert,
+        message: 'Tourist confirmed problem is resolved and they are safe.'
+      });
+      this.broadcastToAdmins('alert_updated', alert);
+      return true;
+    }
+    return false;
+  }
+
   // Resolve an alert (for admin actions)
   resolveAlert(alertId) {
     const alert = this.emergencyAlerts.get(alertId);
     if (alert) {
       alert.status = 'RESOLVED';
+      alert.resolutionStatus = 'RESOLVED';
       alert.resolvedAt = new Date();
       this.emergencyAlerts.set(alertId, alert);
       

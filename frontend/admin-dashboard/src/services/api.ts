@@ -85,6 +85,7 @@ export interface EmergencyAlert {
   };
   timestamp: string;
   status: string;
+  resolutionStatus?: string;
   message: string;
   resolvedAt?: string;
 }
@@ -135,6 +136,12 @@ export const apiService = {
 
   getEmergencyAlerts: async (): Promise<ApiResponse<EmergencyAlert[]>> => {
     const response = await apiClient.get('/alerts/emergency');
+    return response.data;
+  },
+
+  // Cross-check with tourist
+  requestConfirmation: async (alertId: string): Promise<ApiResponse<any>> => {
+    const response = await apiClient.post(`/alerts/${alertId}/request-confirmation`);
     return response.data;
   },
 

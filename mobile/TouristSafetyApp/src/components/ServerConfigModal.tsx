@@ -112,9 +112,9 @@ export const ServerConfigModal: React.FC<ServerConfigModalProps> = ({
           <View style={styles.presetsRow}>
             <TouchableOpacity
               style={styles.presetChip}
-              onPress={() => setServerUrlInput('https://bec1594768af52.lhr.life')}
+              onPress={() => setServerUrlInput('https://tax-firefox-journey-ringtone.trycloudflare.com')}
             >
-              <Text style={styles.presetChipText}>🌐 Live Cloud HTTPS</Text>
+              <Text style={styles.presetChipText}>🌐 Cloudflare Tunnel</Text>
             </TouchableOpacity>
 
             <TouchableOpacity

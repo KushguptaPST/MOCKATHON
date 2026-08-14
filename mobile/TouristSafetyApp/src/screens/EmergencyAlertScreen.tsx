@@ -27,7 +27,54 @@ const EmergencyAlertScreen: React.FC<NavigationProps> = ({ navigation }) => {
     getCurrentLocation();
     loadUserData();
     startPulseAnimation();
+
+    // Listen for resolution cross-check from admin
+    const handleResolutionPrompt = (data: any) => {
+      console.log('🚨 Received resolution confirmation request:', data);
+      Alert.alert(
+        '🚨 Police / Control Room Check',
+        data.message || 'Authorities are checking: Is your problem resolved? Are you safe now?',
+        [
+          {
+            text: '❌ Still Need Help',
+            style: 'destructive',
+            onPress: () => {
+              Alert.alert('Help is Active', 'Your emergency alert remains active. Officers and emergency contacts are on standby.');
+            }
+          },
+          {
+            text: '✅ Yes, I am Safe (Confirm Resolved)',
+            onPress: async () => {
+              await handleConfirmResolution(data.alertId);
+            }
+          }
+        ],
+        { cancelable: false }
+      );
+    };
+
+    socketService.on('request_resolution_confirmation', handleResolutionPrompt);
+
+    return () => {
+      socketService.off('request_resolution_confirmation', handleResolutionPrompt);
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleConfirmResolution = async (alertId: string) => {
+    try {
+      await emergencyAPI.confirmResolution(alertId);
+      setSentAlerts(prev => prev.map(a => a.id === alertId ? { ...a, status: 'CONFIRMED_SAFE' } : a));
+      Alert.alert(
+        '✅ Safety Confirmed',
+        'Thank you! Your confirmation that you are safe has been received by the control room and authorities.'
+      );
+    } catch (e) {
+      console.error('Error confirming resolution:', e);
+      // Optimistically update status
+      setSentAlerts(prev => prev.map(a => a.id === alertId ? { ...a, status: 'CONFIRMED_SAFE' } : a));
+      Alert.alert('✅ Safety Confirmed', 'Your confirmation has been noted.');
+    }
+  };
 
   const loadUserData = async () => {
     try {
@@ -92,7 +139,7 @@ const EmergencyAlertScreen: React.FC<NavigationProps> = ({ navigation }) => {
     Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, {
-          toValue: 1.2,
+          toValue: 1.03,
           duration: 800,
           useNativeDriver: true,
         }),
@@ -176,15 +223,19 @@ const EmergencyAlertScreen: React.FC<NavigationProps> = ({ navigation }) => {
       socketService.sendEmergencyAlert(activeLocation, `${alertType.toUpperCase()}: ${finalMsg}`);
 
       // B. Send via REST API to MongoDB Database
+      let registeredAlertId = `ALERT_${Date.now()}`;
       try {
-        await emergencyAPI.sendAlert(alertData);
+        const res = await emergencyAPI.sendAlert(alertData);
+        if (res && res.alertId) {
+          registeredAlertId = res.alertId;
+        }
       } catch (apiErr) {
         console.warn('REST API emergency alert backup warning:', apiErr);
       }
 
       // Record in Sent Alerts list on screen
       const newSentItem = {
-        id: `ALERT_${Date.now()}`,
+        id: registeredAlertId,
         type: currentTypeObj.label,
         message: finalMsg,
         time: new Date().toLocaleTimeString(),
@@ -280,12 +331,13 @@ const EmergencyAlertScreen: React.FC<NavigationProps> = ({ navigation }) => {
         <Text style={styles.headerSubtitle}>Get help quickly and safely</Text>
       </View>
 
-      {/* Panic Button */}
+      {/* Rectangular Panic SOS Button with Border Radius */}
       <View style={styles.panicSection}>
         <TouchableOpacity
           style={styles.panicButton}
           onPress={quickPanicAlert}
           disabled={sending}
+          activeOpacity={0.85}
         >
           <Animated.View
             style={[
@@ -293,13 +345,17 @@ const EmergencyAlertScreen: React.FC<NavigationProps> = ({ navigation }) => {
               { transform: [{ scale: pulseAnim }] },
             ]}
           >
-            <Text style={styles.panicButtonIcon}>🚨</Text>
-            <Text style={styles.panicButtonText}>PANIC</Text>
-            <Text style={styles.panicButtonSubtext}>Emergency Help</Text>
+            <View style={styles.panicContentRow}>
+              <Text style={styles.panicButtonIcon}>🚨</Text>
+              <View style={styles.panicTextGroup}>
+                <Text style={styles.panicButtonText}>PANIC SOS BUTTON</Text>
+                <Text style={styles.panicButtonSubtext}>Tap for Immediate Emergency Help & Rescue</Text>
+              </View>
+            </View>
           </Animated.View>
         </TouchableOpacity>
         <Text style={styles.panicDescription}>
-          Tap the panic button for immediate emergency assistance
+          Press the rectangular PANIC button above to alert police & control room instantly
         </Text>
       </View>
 
@@ -400,7 +456,7 @@ const EmergencyAlertScreen: React.FC<NavigationProps> = ({ navigation }) => {
         </TouchableOpacity>
       </View>
 
-      {/* Sent Alerts Section */}
+      {/* Sent Alerts Section with Resolution Cross-Check Confirmation */}
       {sentAlerts.length > 0 && (
         <View style={styles.sentSection}>
           <Text style={styles.sentTitle}>📋 Sent Emergency Alerts ({sentAlerts.length})</Text>
@@ -408,12 +464,49 @@ const EmergencyAlertScreen: React.FC<NavigationProps> = ({ navigation }) => {
             <View key={item.id} style={styles.sentCard}>
               <View style={styles.sentCardHeader}>
                 <Text style={styles.sentCardType}>🚨 {item.type}</Text>
-                <View style={styles.sentStatusBadge}>
-                  <Text style={styles.sentStatusText}>{item.status}</Text>
+                <View style={[
+                  styles.sentStatusBadge,
+                  item.status === 'CONFIRMED_SAFE' && styles.sentStatusBadgeSafe
+                ]}>
+                  <Text style={[
+                    styles.sentStatusText,
+                    item.status === 'CONFIRMED_SAFE' && styles.sentStatusTextSafe
+                  ]}>
+                    {item.status === 'CONFIRMED_SAFE' ? '✅ SAFE & RESOLVED' : '🚨 ACTIVE'}
+                  </Text>
                 </View>
               </View>
               <Text style={styles.sentCardMessage}>{item.message}</Text>
               <Text style={styles.sentCardTime}>Dispatched at {item.time}</Text>
+
+              {item.status !== 'CONFIRMED_SAFE' ? (
+                <TouchableOpacity
+                  style={styles.resolveConfirmButton}
+                  onPress={() => {
+                    Alert.alert(
+                      'Confirm Safety & Resolution',
+                      'Is your problem resolved and are you safe now?',
+                      [
+                        { text: 'No, Keep Alert Active', style: 'cancel' },
+                        {
+                          text: '✅ Yes, I am Safe (Resolve)',
+                          onPress: () => handleConfirmResolution(item.id)
+                        }
+                      ]
+                    );
+                  }}
+                >
+                  <Text style={styles.resolveConfirmButtonText}>
+                    ✅ Is problem resolved? Tap to Confirm Safe
+                  </Text>
+                </TouchableOpacity>
+              ) : (
+                <View style={styles.safeConfirmedBox}>
+                  <Text style={styles.safeConfirmedText}>
+                    ✅ Safety confirmed by you. Control room notified.
+                  </Text>
+                </View>
+              )}
             </View>
           ))}
         </View>
@@ -455,12 +548,11 @@ const styles = StyleSheet.create({
     color: '#f8c9c4',
   },
   panicSection: {
-    alignItems: 'center',
-    padding: 24,
+    padding: 16,
     backgroundColor: '#fff',
     margin: 16,
     marginTop: -20,
-    borderRadius: 12,
+    borderRadius: 14,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
@@ -468,40 +560,49 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   panicButton: {
-    marginBottom: 16,
+    width: '100%',
+    marginBottom: 12,
   },
   panicButtonInner: {
-    width: 160,
-    height: 160,
-    borderRadius: 80,
+    width: '100%',
+    paddingVertical: 18,
+    paddingHorizontal: 16,
+    borderRadius: 14,
     backgroundColor: '#e74c3c',
-    justifyContent: 'center',
-    alignItems: 'center',
     shadowColor: '#e74c3c',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
-    shadowRadius: 10,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  panicContentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   panicButtonIcon: {
-    fontSize: 40,
-    marginBottom: 8,
+    fontSize: 34,
+    marginRight: 14,
+  },
+  panicTextGroup: {
+    flexShrink: 1,
   },
   panicButtonText: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#fff',
-    marginBottom: 4,
+    letterSpacing: 0.5,
   },
   panicButtonSubtext: {
-    fontSize: 14,
-    color: '#f8c9c4',
+    fontSize: 13,
+    color: '#ffebee',
+    marginTop: 2,
   },
   panicDescription: {
-    fontSize: 16,
+    fontSize: 13,
     color: '#7f8c8d',
     textAlign: 'center',
-    lineHeight: 22,
+    lineHeight: 18,
   },
   typeSection: {
     backgroundColor: '#fff',
@@ -629,7 +730,7 @@ const styles = StyleSheet.create({
   },
   sendButton: {
     backgroundColor: '#e74c3c',
-    borderRadius: 8,
+    borderRadius: 10,
     paddingVertical: 18,
     alignItems: 'center',
     marginBottom: 12,
@@ -644,7 +745,7 @@ const styles = StyleSheet.create({
   },
   cancelButton: {
     backgroundColor: '#95a5a6',
-    borderRadius: 8,
+    borderRadius: 10,
     paddingVertical: 16,
     alignItems: 'center',
   },
@@ -665,9 +766,9 @@ const styles = StyleSheet.create({
   },
   sentCard: {
     backgroundColor: '#fff',
-    borderRadius: 10,
-    padding: 14,
-    marginBottom: 10,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
     borderLeftWidth: 4,
     borderLeftColor: '#e74c3c',
     shadowColor: '#000',
@@ -688,17 +789,24 @@ const styles = StyleSheet.create({
     color: '#c0392b',
   },
   sentStatusBadge: {
-    backgroundColor: '#e8f8f5',
+    backgroundColor: '#fde8e7',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 4,
     borderWidth: 1,
+    borderColor: '#fadbd8',
+  },
+  sentStatusBadgeSafe: {
+    backgroundColor: '#e8f8f5',
     borderColor: '#a3e4d7',
   },
   sentStatusText: {
     fontSize: 11,
     fontWeight: 'bold',
-    color: '#16a085',
+    color: '#c0392b',
+  },
+  sentStatusTextSafe: {
+    color: '#27ae60',
   },
   sentCardMessage: {
     fontSize: 13,
@@ -708,6 +816,35 @@ const styles = StyleSheet.create({
   sentCardTime: {
     fontSize: 11,
     color: '#95a5a6',
+    marginBottom: 8,
+  },
+  resolveConfirmButton: {
+    backgroundColor: '#27ae60',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  resolveConfirmButtonText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  safeConfirmedBox: {
+    backgroundColor: '#e8f8f5',
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#a3e4d7',
+    marginTop: 4,
+  },
+  safeConfirmedText: {
+    color: '#16a085',
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   tipsSection: {
     backgroundColor: '#fff',

@@ -4,6 +4,7 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const path = require('path');
 const { createServer } = require('http');
+const mongoose = require('mongoose');
 require('dotenv').config();
 
 // Import database connection and routes
@@ -16,7 +17,7 @@ const smsService = require('./services/smsService');
 
 // --- ADDED FIXES ---
 // 1. Import the auth middleware
-const { auth } = require('./middleware/auth');
+const { auth, optionalAuth } = require('./middleware/auth');
 
 // 2. Import the missing database models
 const User = require('./models/User');
@@ -103,16 +104,51 @@ app.get('/api/alerts/emergency', (req, res) => {
   });
 });
 
+// Admin requests cross-check from tourist ("Is problem resolved?")
+app.post('/api/alerts/:alertId/request-confirmation', async (req, res) => {
+  const { alertId } = req.params;
+  const success = socketHandler.requestResolutionConfirmation(alertId);
+  if (success) {
+    return res.json({
+      success: true,
+      message: 'Cross-check request sent to tourist successfully'
+    });
+  }
+  return res.status(404).json({
+    success: false,
+    message: 'Alert not found'
+  });
+});
+
+// Tourist confirms resolution ("Yes, I am Safe")
+app.post('/api/alerts/:alertId/tourist-confirm', async (req, res) => {
+  const { alertId } = req.params;
+  const success = socketHandler.touristConfirmResolution(alertId);
+  if (success) {
+    return res.json({
+      success: true,
+      message: 'Thank you! Your safety confirmation has been sent to the control room.'
+    });
+  }
+  return res.status(404).json({
+    success: false,
+    message: 'Alert not found'
+  });
+});
+
 // Resolve an alert (for admin)
 app.post('/api/alerts/:alertId/resolve', async (req, res) => {
   const { alertId } = req.params;
   try {
     const resolvedInMemory = socketHandler.resolveAlert(alertId);
-    const resolvedInDatabase = await Alert.findByIdAndUpdate(
-      alertId,
-      { status: 'resolved', resolvedAt: new Date() },
-      { new: true }
-    );
+    let resolvedInDatabase = null;
+    if (mongoose.Types.ObjectId.isValid(alertId)) {
+      resolvedInDatabase = await Alert.findByIdAndUpdate(
+        alertId,
+        { status: 'resolved', resolvedAt: new Date() },
+        { new: true }
+      );
+    }
     const resolved = resolvedInMemory || Boolean(resolvedInDatabase);
   
     if (resolved) {
@@ -173,37 +209,49 @@ app.get('/api/location/history', auth, async (req, res) => {
   }
 });
 
-app.post('/api/emergency/alert', auth, async (req, res) => {
+app.post('/api/emergency/alert', optionalAuth, async (req, res) => {
   try {
     const { type, location, message } = req.body;
-    const lng = location?.longitude ?? location?.lng ?? 0;
-    const lat = location?.latitude ?? location?.lat ?? 0;
+    const lng = location?.longitude ?? location?.lng ?? 77.2090;
+    const lat = location?.latitude ?? location?.lat ?? 28.6139;
+    const userId = req.user ? req.user._id : 'anonymous';
+    const digitalId = req.user ? req.user.digitalId : 'TID_EMERGENCY';
+    const touristName = req.user ? req.user.name : 'Tourist';
 
-    const alert = await Alert.create({
-      tourist: req.user._id,
-      type: type || 'panic',
-      location: {
-        type: 'Point',
-        coordinates: [lng, lat]
-      },
-      message
-    });
+    let alertId = `ALERT_${Date.now()}`;
+    if (req.user) {
+      try {
+        const alert = await Alert.create({
+          tourist: req.user._id,
+          type: type || 'panic',
+          location: {
+            type: 'Point',
+            coordinates: [lng, lat]
+          },
+          message
+        });
+        alertId = String(alert._id);
+      } catch (dbErr) {
+        console.warn('DB alert creation warning:', dbErr.message);
+      }
+    }
     
     // Store and broadcast the REST alert so admin polling and real-time views agree.
     socketHandler.recordEmergencyAlert({
-      alertId: String(alert._id),
-      userId: String(req.user._id),
-      digitalId: req.user.digitalId,
+      alertId: alertId,
+      userId: String(userId),
+      digitalId: digitalId,
+      touristName: touristName,
       type: 'EMERGENCY',
       emergencyType: type || 'panic',
       location: location || { latitude: lat, longitude: lng },
-      timestamp: alert.createdAt,
+      timestamp: new Date(),
       status: 'ACTIVE',
       message: message || 'Emergency alert triggered'
     });
 
     // Dispatch Twilio SMS to Emergency Contact
-    if (req.user.emergencyContact) {
+    if (req.user && req.user.emergencyContact) {
       smsService.sendEmergencySMS({
         toPhone: req.user.emergencyContact,
         touristName: req.user.name,
@@ -214,7 +262,7 @@ app.post('/api/emergency/alert', auth, async (req, res) => {
       });
     }
 
-    res.status(201).json({ success: true, alertId: alert._id });
+    res.status(201).json({ success: true, alertId });
   } catch (err) {
     console.error('Error triggering alert:', err);
     res.status(500).json({ success: false, message: 'Failed to trigger alert' });

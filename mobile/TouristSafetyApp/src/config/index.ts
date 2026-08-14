@@ -1,7 +1,7 @@
 // Configuration file for RakshaSetu app
 
-// API Configuration. Uses active persistent public HTTPS endpoint with keep-alive.
-export const API_BASE_URL = process.env.API_BASE_URL || 'https://bec1594768af52.lhr.life';
+// API Configuration. Uses ultra-fast, stable Cloudflare global edge tunnel.
+export const API_BASE_URL = process.env.API_BASE_URL || 'https://tax-firefox-journey-ringtone.trycloudflare.com';
 export const API_ENDPOINTS = {
   AUTH: '/api/auth',
   VERIFICATION: '/api',

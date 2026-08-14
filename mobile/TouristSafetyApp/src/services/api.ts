@@ -124,6 +124,11 @@ export const emergencyAPI = {
     const response = await api.get('/emergency/history');
     return response.data;
   },
+
+  confirmResolution: async (alertId: string) => {
+    const response = await api.post(`/alerts/${alertId}/tourist-confirm`);
+    return response.data;
+  },
 };
 
 // Utility functions for token management

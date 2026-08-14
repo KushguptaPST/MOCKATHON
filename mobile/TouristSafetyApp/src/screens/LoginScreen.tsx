@@ -154,28 +154,6 @@ const LoginScreen: React.FC<NavigationProps> = ({ navigation }) => {
               )}
             </TouchableOpacity>
 
-            {/* Quick Demo Credentials */}
-            <View style={styles.demoSection}>
-              <Text style={styles.demoSectionTitle}>⚡ Quick Fill Test Accounts:</Text>
-              <View style={styles.demoButtonsRow}>
-                <TouchableOpacity
-                  style={styles.demoButton}
-                  onPress={() => fillDemoAccount('alok1234@gmail.com', 'alok1234')}
-                  disabled={loading}
-                >
-                  <Text style={styles.demoButtonText}>👤 Alok (Tourist)</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.demoButton}
-                  onPress={() => fillDemoAccount('kushg0082@gmail.com', 'kush1234')}
-                  disabled={loading}
-                >
-                  <Text style={styles.demoButtonText}>👮 Kush (Admin)</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
             {/* Register Link */}
             <View style={styles.registerContainer}>
               <Text style={styles.registerText}>Don't have an account?</Text>
@@ -186,14 +164,6 @@ const LoginScreen: React.FC<NavigationProps> = ({ navigation }) => {
                 <Text style={styles.registerLink}>Sign Up</Text>
               </TouchableOpacity>
             </View>
-
-            <TouchableOpacity
-              onPress={() => setShowServerModal(true)}
-              disabled={loading}
-              style={styles.serverSettingsButton}
-            >
-              <Text style={styles.serverSettingsText}>⚙️ Backend server settings</Text>
-            </TouchableOpacity>
           </View>
 
           <ServerConfigModal

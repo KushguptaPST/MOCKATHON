@@ -232,6 +232,22 @@ const Dashboard: React.FC = () => {
     setNotification({ ...notification, open: false });
   };
 
+  const handleRequestCrossCheck = async (alertId: string, alertType: string) => {
+    try {
+      const response = await apiService.requestConfirmation(alertId);
+      if (response.success) {
+        setNotification({
+          open: true,
+          message: `Cross-check prompt sent to tourist's phone for ${alertType} alert!`,
+          severity: 'info',
+        });
+        await fetchRecentAlerts();
+      }
+    } catch (err) {
+      console.error('Error sending cross-check:', err);
+    }
+  };
+
   return (
     <Box sx={{ flexGrow: 1 }}>
       {/* App Bar */}
@@ -358,6 +374,20 @@ const Dashboard: React.FC = () => {
                         }}
                       />
                     )}
+                    {alert.resolutionStatus === 'PENDING_TOURIST_CONFIRMATION' && (
+                      <Chip
+                        label="⏳ Waiting for Tourist Confirmation..."
+                        size="small"
+                        sx={{ bgcolor: '#ff9800', color: 'white', fontWeight: 'bold', mt: 0.5, ml: 1 }}
+                      />
+                    )}
+                    {alert.resolutionStatus === 'TOURIST_CONFIRMED' && (
+                      <Chip
+                        label="✅ Tourist Confirmed: Problem Resolved & Safe"
+                        size="small"
+                        sx={{ bgcolor: '#4caf50', color: 'white', fontWeight: 'bold', mt: 0.5, ml: 1 }}
+                      />
+                    )}
                     <Typography variant="body2" sx={{ mt: 0.5 }}>
                       <strong>Message:</strong> {alert.message}
                     </Typography>
@@ -367,26 +397,36 @@ const Dashboard: React.FC = () => {
                     <Typography variant="caption" color="text.secondary">
                       {formatDate(alert.timestamp)}
                     </Typography>
-                    <Button
-                      size="small"
-                      variant="contained"
-                      color="primary"
-                      sx={{ ml: 2, mt: 1 }}
-                      onClick={() => {
-                        window.open(`https://www.google.com/maps?q=${alert.location.latitude},${alert.location.longitude}`, '_blank');
-                      }}
-                    >
-                      View on Map
-                    </Button>
-                    <Button
-                      size="small"
-                      variant="contained"
-                      color="success"
-                      sx={{ ml: 1, mt: 1 }}
-                      onClick={() => handleResolveAlert(alert.alertId, emergencyInfo.label)}
-                    >
-                      ✅ Resolve Alert
-                    </Button>
+
+                    <Box sx={{ mt: 1.5, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        color="primary"
+                        onClick={() => {
+                          window.open(`https://www.google.com/maps?q=${alert.location.latitude},${alert.location.longitude}`, '_blank');
+                        }}
+                      >
+                        📍 View on Map
+                      </Button>
+                      <Button
+                        size="small"
+                        variant="contained"
+                        sx={{ bgcolor: '#ff9800', color: '#fff', '&:hover': { bgcolor: '#f57c00' } }}
+                        onClick={() => handleRequestCrossCheck(alert.alertId, emergencyInfo.label)}
+                      >
+                        🔍 Send Cross-Check to Tourist
+                      </Button>
+                      <Button
+                        size="small"
+                        variant="contained"
+                        color={alert.resolutionStatus === 'TOURIST_CONFIRMED' ? 'success' : 'inherit'}
+                        sx={alert.resolutionStatus === 'TOURIST_CONFIRMED' ? { bgcolor: '#2e7d32', color: '#fff', fontWeight: 'bold' } : { bgcolor: '#757575', color: '#fff' }}
+                        onClick={() => handleResolveAlert(alert.alertId, emergencyInfo.label)}
+                      >
+                        {alert.resolutionStatus === 'TOURIST_CONFIRMED' ? '✅ Confirm & Close Resolved' : 'Resolve Alert'}
+                      </Button>
+                    </Box>
                   </Box>
                 );
               })}

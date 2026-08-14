@@ -312,14 +312,101 @@
             }
         });
 
-        // Request notification permission
-        if ('Notification' in window) {
-            Notification.requestPermission();
+        // Load initial alerts from REST API on page load
+        async function loadInitialAlertsAndStats() {
+            try {
+                const res = await fetch('/api/alerts/emergency');
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.success && Array.isArray(data.alerts)) {
+                        const activeAlerts = data.alerts.filter(a => a.status === 'ACTIVE');
+                        emergencyCount = activeAlerts.length;
+                        document.getElementById('emergency-count').textContent = emergencyCount;
+                        
+                        const alertList = document.getElementById('emergency-list');
+                        if (activeAlerts.length > 0) {
+                            alertList.innerHTML = '';
+                            activeAlerts.forEach(alert => {
+                                addEmergencyMarker(alert);
+                                const alertDiv = document.createElement('div');
+                                alertDiv.className = 'alert';
+                                
+                                let statusPill = '';
+                                if (alert.resolutionStatus === 'PENDING_TOURIST_CONFIRMATION') {
+                                    statusPill = `<div style="background: #fff3cd; color: #856404; padding: 4px 8px; border-radius: 4px; font-size: 11px; margin: 4px 0; font-weight: bold; border: 1px solid #ffeeba;">⏳ Cross-Check Sent: Waiting for Tourist response...</div>`;
+                                } else if (alert.resolutionStatus === 'TOURIST_CONFIRMED') {
+                                    statusPill = `<div style="background: #d4edda; color: #155724; padding: 4px 8px; border-radius: 4px; font-size: 11px; margin: 4px 0; font-weight: bold; border: 1px solid #c3e6cb;">✅ Tourist Confirmed: Problem is Resolved & Safe!</div>`;
+                                }
+
+                                const isConfirmed = alert.resolutionStatus === 'TOURIST_CONFIRMED';
+                                
+                                alertDiv.innerHTML = `
+                                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                                        <strong>🚨 EMERGENCY ALERT</strong>
+                                        <span style="font-size: 11px; color: #721c24;">${alert.digitalId || 'TID_TOURIST'}</span>
+                                    </div>
+                                    ${statusPill}
+                                    <strong>Category:</strong> ${(alert.emergencyType || alert.type || 'PANIC').toUpperCase()}<br>
+                                    <strong>Message:</strong> ${alert.message || 'Emergency assistance needed'}<br>
+                                    <strong>Location:</strong> ${alert.location ? (alert.location.latitude.toFixed(6) + ', ' + alert.location.longitude.toFixed(6)) : 'GPS Pending'}<br>
+                                    <strong>Time:</strong> ${new Date(alert.timestamp).toLocaleString()}
+                                    <div style="margin-top: 8px; display: flex; gap: 6px;">
+                                        <button onclick="requestConfirmation('${alert.alertId}')" style="background: #e67e22; color: white; border: none; border-radius: 4px; padding: 6px 10px; cursor: pointer; font-size: 11px; font-weight: bold;">🔍 Send Cross-Check</button>
+                                        <button onclick="resolveAlert('${alert.alertId}')" style="background: ${isConfirmed ? '#27ae60' : '#7f8c8d'}; color: white; border: none; border-radius: 4px; padding: 6px 10px; cursor: pointer; font-size: 11px; font-weight: bold;">${isConfirmed ? '✅ Confirm & Close Alert' : 'Resolve Alert'}</button>
+                                    </div>
+                                    <small style="opacity: 0.8; display: block; margin-top: 4px;">📍 Location marked on map above</small>
+                                `;
+                                alertList.appendChild(alertDiv);
+                            });
+                            addLog(`🚨 Loaded ${activeAlerts.length} active emergency alerts from server`);
+                        }
+                    }
+                }
+
+                // Also load health/stats
+                const statsRes = await fetch('/api/health');
+                if (statsRes.ok) {
+                    const statsData = await statsRes.json();
+                    if (statsData.socketStats) {
+                        document.getElementById('total-connected').textContent = statsData.socketStats.totalConnected || 0;
+                        document.getElementById('online-tourists').textContent = statsData.socketStats.onlineTourists || 0;
+                    }
+                }
+            } catch (err) {
+                console.error('Error loading initial alerts:', err);
+            }
+        }
+
+        async function requestConfirmation(alertId) {
+            try {
+                const res = await fetch(`/api/alerts/${alertId}/request-confirmation`, { method: 'POST' });
+                if (res.ok) {
+                    addLog(`🔍 Cross-check confirmation prompt sent to tourist for alert ${alertId}`);
+                    loadInitialAlertsAndStats();
+                }
+            } catch (e) {
+                console.error('Failed to send confirmation request:', e);
+            }
+        }
+
+        async function resolveAlert(alertId) {
+            try {
+                const res = await fetch(`/api/alerts/${alertId}/resolve`, { method: 'POST' });
+                if (res.ok) {
+                    addLog(`✅ Alert ${alertId} resolved`);
+                    loadInitialAlertsAndStats();
+                }
+            } catch (e) {
+                console.error('Failed to resolve alert:', e);
+            }
         }
 
         // Initialize map when page loads
         window.addEventListener('load', () => {
             initMap();
+            loadInitialAlertsAndStats();
+            // Periodic background sync every 3 seconds
+            setInterval(loadInitialAlertsAndStats, 3000);
         });
 
         addLog('🚀 Real-time monitoring dashboard initialized');
